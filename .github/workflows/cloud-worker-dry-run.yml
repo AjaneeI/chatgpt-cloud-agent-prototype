@@ -1,0 +1,44 @@
+name: ChatGPT Cloud Worker (free dry run)
+
+on:
+  issues:
+    types: [labeled]
+
+permissions:
+  contents: read
+  issues: write
+
+concurrency:
+  group: cloud-dry-run-${{ github.event.issue.number }}
+  cancel-in-progress: false
+
+jobs:
+  dry-run:
+    if: github.event.label.name == 'cloud-run-approved' && github.event.issue.user.login == 'AjaneeI'
+    runs-on: ubuntu-latest
+    timeout-minutes: 5
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          persist-credentials: false
+      - uses: actions/setup-python@v5
+        with:
+          python-version: '3.12'
+      - name: Validate worker with deterministic unit tests
+        run: python -m unittest discover -s tests -v
+      - name: Run simulated stage (no inference, no model keys)
+        run: python -m scripts.cloud_worker --event "$GITHUB_EVENT_PATH" --output-dir results
+      - name: Preserve stage report
+        if: always()
+        uses: actions/upload-artifact@v4
+        with:
+          name: cloud-worker-report-${{ github.event.issue.number }}
+          path: results/
+          if-no-files-found: warn
+      - name: Return report to GitHub issue
+        if: success()
+        env:
+          GH_TOKEN: ${{ github.token }}
+          ISSUE_NUMBER: ${{ github.event.issue.number }}
+          REPO_NAME: ${{ github.repository }}
+        run: gh issue comment "$ISSUE_NUMBER" --repo "$REPO_NAME" --body-file results/report.md
